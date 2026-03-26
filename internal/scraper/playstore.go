@@ -36,39 +36,73 @@ var (
 
 // FetchReviews fetches the latest reviews by scraping the Play Store app page.
 // Reviews are embedded in the page HTML as part of the AF_initDataCallback
-// payload for key 'ds:11'.
+// payload for key 'ds:11'. Google returns up to 20 "most relevant" reviews
+// per page; results are sorted by date in the caller (main.go).
 func (s *PlayStoreScraper) FetchReviews() ([]Review, error) {
+	html, err := s.fetchHTML("")
+	if err != nil {
+		return nil, err
+	}
+	appName := extractAppName(html, s.PackageName)
+	return parsePlayStoreHTML(html, s.PackageName, appName)
+}
+
+// fetchPlayStoreAppName fetches the display name of a Play Store app from its HTML page.
+// It is shared by both PlayStoreScraper and PlayStoreAPIScraper.
+func fetchPlayStoreAppName(packageName, lang, country string, client *http.Client) string {
 	pageURL := fmt.Sprintf(
 		"https://play.google.com/store/apps/details?id=%s&hl=%s&gl=%s",
-		s.PackageName, s.Lang, s.Country,
+		packageName, lang, country,
+	)
+	req, err := http.NewRequest("GET", pageURL, nil)
+	if err != nil {
+		return packageName
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", lang)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return packageName
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return packageName
+	}
+	return extractAppName(string(body), packageName)
+}
+
+// fetchHTML fetches the Play Store app page, optionally with extra query params.
+func (s *PlayStoreScraper) fetchHTML(extraParams string) (string, error) {
+	pageURL := fmt.Sprintf(
+		"https://play.google.com/store/apps/details?id=%s&hl=%s&gl=%s%s",
+		s.PackageName, s.Lang, s.Country, extraParams,
 	)
 
 	req, err := http.NewRequest("GET", pageURL, nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Accept-Language", s.Lang)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http get: %w", err)
+		return "", fmt.Errorf("http get: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, s.PackageName)
+		return "", fmt.Errorf("unexpected status %d for %s", resp.StatusCode, s.PackageName)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	html := string(body)
-
-	appName := extractAppName(html, s.PackageName)
-
-	return parsePlayStoreHTML(html, s.PackageName, appName)
+	return string(body), nil
 }
 
 // extractAppName reads the app name from the og:title meta tag.

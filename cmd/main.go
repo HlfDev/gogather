@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/hlfdev/gogather/config"
@@ -36,7 +38,7 @@ func main() {
 func poll(cfg *config.Config, seen *store.SeenStore, slack *notifier.SlackNotifier) {
 	var all []scraper.Review
 
-	if cfg.AppleAppID != "" {
+	if cfg.AppleEnabled && cfg.AppleAppID != "" {
 		apple := scraper.NewAppleScraper(cfg.AppleAppID, cfg.AppleRegion)
 		reviews, err := apple.FetchReviews()
 		if err != nil {
@@ -47,9 +49,8 @@ func poll(cfg *config.Config, seen *store.SeenStore, slack *notifier.SlackNotifi
 		}
 	}
 
-	if cfg.PlayStorePackageName != "" {
-		play := scraper.NewPlayStoreScraper(cfg.PlayStorePackageName, cfg.PlayStoreLang, cfg.PlayStoreCountry)
-		reviews, err := play.FetchReviews()
+	if cfg.PlayStoreEnabled && cfg.PlayStorePackageName != "" {
+		reviews, err := fetchPlayStoreReviews(cfg)
 		if err != nil {
 			log.Printf("[playstore] fetch error: %v", err)
 		} else {
@@ -57,6 +58,30 @@ func poll(cfg *config.Config, seen *store.SeenStore, slack *notifier.SlackNotifi
 			all = append(all, reviews...)
 		}
 	}
+
+	// Drop reviews older than MaxReviewAge (avoids old "most-relevant" results
+	// from the Play Store HTML scraper polluting the Slack channel).
+	if cfg.MaxReviewAge > 0 {
+		cutoff := time.Now().Add(-cfg.MaxReviewAge)
+		filtered := all[:0]
+		skipped := 0
+		for _, r := range all {
+			if !r.Date.IsZero() && r.Date.Before(cutoff) {
+				skipped++
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		if skipped > 0 {
+			log.Printf("filtered %d reviews older than %s", skipped, cfg.MaxReviewAge.String())
+		}
+		all = filtered
+	}
+
+	// Send oldest reviews first so Slack channel reads chronologically.
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Date.Before(all[j].Date)
+	})
 
 	newCount := 0
 	for _, r := range all {
@@ -74,4 +99,26 @@ func poll(cfg *config.Config, seen *store.SeenStore, slack *notifier.SlackNotifi
 	}
 
 	log.Printf("poll done — %d new reviews sent to Slack", newCount)
+}
+
+// fetchPlayStoreReviews selects the best available backend:
+//   - Google Play Developer API when PLAY_STORE_CREDENTIALS_JSON is set (exact, sorted by date)
+//   - HTML scraper fallback (20 "most relevant" reviews, filtered by age in the caller)
+func fetchPlayStoreReviews(cfg *config.Config) ([]scraper.Review, error) {
+	if cfg.PlayStoreCredentialsJSON != "" {
+		s, err := scraper.NewPlayStoreAPIScraper(
+			cfg.PlayStorePackageName,
+			cfg.PlayStoreLang,
+			cfg.PlayStoreCountry,
+			cfg.PlayStoreCredentialsJSON,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("init API scraper: %w", err)
+		}
+		log.Print("[playstore] using Developer API")
+		return s.FetchReviews()
+	}
+	log.Print("[playstore] using HTML scraper (set PLAY_STORE_CREDENTIALS_JSON for full coverage)")
+	s := scraper.NewPlayStoreScraper(cfg.PlayStorePackageName, cfg.PlayStoreLang, cfg.PlayStoreCountry)
+	return s.FetchReviews()
 }

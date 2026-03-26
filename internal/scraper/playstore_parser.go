@@ -5,7 +5,7 @@ package scraper
 // The Play Store embeds review data in an AF_initDataCallback call with key 'ds:11'.
 // The data array structure is:
 //
-//	data[0] = []review      (up to 20 most recent reviews)
+//	data[0] = []review      (up to 20 most-relevant reviews)
 //	data[1] = pagination info
 //
 // Each review array has the following positions:
@@ -114,11 +114,4 @@ func parsePlayStoreReview(raw interface{}, packageName, appName string) (Review,
 		Date:    date,
 		Version: version,
 	}, nil
-}
-
-func preview(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
