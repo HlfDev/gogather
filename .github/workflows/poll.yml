@@ -1,0 +1,40 @@
+name: Poll Reviews
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # every hour — adjust as needed
+  workflow_dispatch:       # allows manual trigger from GitHub UI
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Restore seen_reviews.json from previous run.
+      # If cache is missing (first run or eviction), starts fresh —
+      # worst case: a batch of already-seen reviews is re-sent to Slack once.
+      - name: Restore seen reviews
+        uses: actions/cache@v4
+        with:
+          path: seen_reviews.json
+          key: seen-reviews-${{ github.run_id }}
+          restore-keys: |
+            seen-reviews-
+
+      - name: Run gogather
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          POLL_INTERVAL_SECONDS: 0          # run once and exit
+          APPLE_APP_ID:          ${{ vars.APPLE_APP_ID }}
+          APPLE_REGION:          ${{ vars.APPLE_REGION }}
+          PLAY_STORE_PACKAGE:    ${{ vars.PLAY_STORE_PACKAGE }}
+          PLAY_STORE_LANG:       ${{ vars.PLAY_STORE_LANG }}
+          PLAY_STORE_COUNTRY:    ${{ vars.PLAY_STORE_COUNTRY }}
+        run: go run ./cmd
