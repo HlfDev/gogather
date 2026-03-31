@@ -35,10 +35,9 @@ jobs:
           APPLE_ENABLED:          ${{ vars.APPLE_ENABLED }}
           APPLE_APP_ID:           ${{ vars.APPLE_APP_ID }}
           APPLE_REGION:           ${{ vars.APPLE_REGION }}
-          PLAY_STORE_ENABLED:          ${{ vars.PLAY_STORE_ENABLED }}
-          PLAY_STORE_PACKAGE:          ${{ vars.PLAY_STORE_PACKAGE }}
-          PLAY_STORE_LANG:             ${{ vars.PLAY_STORE_LANG }}
-          PLAY_STORE_COUNTRY:          ${{ vars.PLAY_STORE_COUNTRY }}
-          PLAY_STORE_CREDENTIALS_JSON: ${{ secrets.PLAY_STORE_CREDENTIALS_JSON }}
-          MAX_REVIEW_AGE_DAYS:         ${{ vars.MAX_REVIEW_AGE_DAYS }}
+          PLAY_STORE_ENABLED:  ${{ vars.PLAY_STORE_ENABLED }}
+          PLAY_STORE_PACKAGE:  ${{ vars.PLAY_STORE_PACKAGE }}
+          PLAY_STORE_LANG:     ${{ vars.PLAY_STORE_LANG }}
+          PLAY_STORE_COUNTRY:  ${{ vars.PLAY_STORE_COUNTRY }}
+          MAX_REVIEW_AGE_DAYS: ${{ vars.MAX_REVIEW_AGE_DAYS }}
         run: go run ./cmd

@@ -17,11 +17,10 @@ type Config struct {
 	AppleRegion  string // e.g. "br", "us"
 
 	// Google Play Store
-	PlayStoreEnabled        bool
-	PlayStorePackageName    string
-	PlayStoreLang           string // e.g. "pt", "en"
-	PlayStoreCountry        string // e.g. "br", "us"
-	PlayStoreCredentialsJSON string // service account JSON key (enables Developer API)
+	PlayStoreEnabled     bool
+	PlayStorePackageName string
+	PlayStoreLang        string // e.g. "pt", "en"
+	PlayStoreCountry     string // e.g. "br", "us"
 }
 
 func Load() *Config {
@@ -35,11 +34,10 @@ func Load() *Config {
 		AppleEnabled:         getEnvBool("APPLE_ENABLED", true),
 		AppleAppID:           os.Getenv("APPLE_APP_ID"),
 		AppleRegion:          getEnvDefault("APPLE_REGION", "br"),
-		PlayStoreEnabled:         getEnvBool("PLAY_STORE_ENABLED", true),
-		PlayStorePackageName:     os.Getenv("PLAY_STORE_PACKAGE"),
-		PlayStoreLang:            getEnvDefault("PLAY_STORE_LANG", "pt"),
-		PlayStoreCountry:         getEnvDefault("PLAY_STORE_COUNTRY", "br"),
-		PlayStoreCredentialsJSON: os.Getenv("PLAY_STORE_CREDENTIALS_JSON"),
+		PlayStoreEnabled:     getEnvBool("PLAY_STORE_ENABLED", true),
+		PlayStorePackageName: os.Getenv("PLAY_STORE_PACKAGE"),
+		PlayStoreLang:        getEnvDefault("PLAY_STORE_LANG", "pt"),
+		PlayStoreCountry:     getEnvDefault("PLAY_STORE_COUNTRY", "br"),
 	}
 }
 

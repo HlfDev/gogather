@@ -231,7 +231,6 @@ No `fly.toml` gerado, adicione:
 | `PLAY_STORE_PACKAGE` | ❌ | — | Package name do app no Play Store |
 | `PLAY_STORE_LANG` | ❌ | `pt` | Idioma das reviews |
 | `PLAY_STORE_COUNTRY` | ❌ | `br` | País das reviews |
-| `PLAY_STORE_CREDENTIALS_JSON` | ❌ | — | JSON de service account do Google Cloud. Quando presente, usa a Developer API em vez do scraper HTML |
 
 ---
 
@@ -250,8 +249,8 @@ gogather/
 │   ├── scraper/
 │   │   ├── review.go           # Struct Review e tipo Source (Apple / Play Store)
 │   │   ├── apple.go            # Scraper da Apple App Store
-│   │   ├── playstore.go        # Scraper do Google Play Store
-│   │   └── playstore_parser.go # Parser do HTML embeddado do Play Store
+│   │   ├── playstore.go        # Scraper do Google Play Store (batchexecute RPC)
+│   │   └── playstore_parser.go # Parser da resposta batchexecute
 │   ├── notifier/
 │   │   └── slack.go            # Monta e envia mensagens via Slack Webhook
 │   └── store/
@@ -259,57 +258,6 @@ gogather/
 ├── .env.example
 ├── Dockerfile
 └── go.mod
-```
-
----
-
-## Google Play Developer API (cobertura completa)
-
-Por padrão o gogather usa scraping HTML, que retorna até 20 reviews "mais relevantes" — podendo incluir avaliações antigas. A **Google Play Developer API** elimina essa limitação: retorna até 100 reviews por requisição, ordenadas pela data mais recente, com cobertura total do histórico.
-
-> Requisito: você precisa ser o **dono ou administrador** do app na Play Console.
-
-### 1. Habilitar a API no Google Cloud
-
-1. Acesse [console.cloud.google.com](https://console.cloud.google.com) → selecione (ou crie) um projeto
-2. **APIs & Services → Enable APIs** → pesquise e ative **Google Play Android Developer API**
-
-### 2. Criar uma Service Account
-
-1. **IAM & Admin → Service Accounts → Create Service Account**
-2. Dê um nome (ex: `gogather`) e clique em **Done**
-3. Na lista de service accounts, clique na que acabou de criar → **Keys → Add Key → Create new key → JSON**
-4. Faça o download do arquivo JSON (guarde-o em segurança — é a chave de acesso)
-
-### 3. Conceder acesso na Play Console
-
-1. Acesse [play.google.com/console](https://play.google.com/console)
-2. **Setup → API access** → vincule o projeto do Google Cloud criado acima
-3. Na seção **Service accounts**, clique em **Grant access** ao lado da service account criada
-4. Adicione a permissão **View app information and download bulk reports (read-only)** → **Invite user**
-
-> Pode levar até 24 h para as permissões propagarem na primeira configuração.
-
-### 4. Configurar o gogather
-
-Cole o conteúdo inteiro do JSON baixado na variável de ambiente `PLAY_STORE_CREDENTIALS_JSON`.
-
-**No `.env` local:**
-```env
-PLAY_STORE_CREDENTIALS_JSON={"type":"service_account","project_id":"...","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...","client_email":"gogather@project.iam.gserviceaccount.com",...}
-```
-
-**No GitHub Actions** — adicione como **Secret** (não Variable, pois contém a chave privada):
-
-| Tipo | Nome | Valor |
-|---|---|---|
-| **Secret** | `PLAY_STORE_CREDENTIALS_JSON` | conteúdo completo do arquivo JSON |
-
-Quando `PLAY_STORE_CREDENTIALS_JSON` está presente, o gogather automaticamente usa a API em vez do scraper HTML. O log indica qual modo está ativo:
-
-```
-[playstore] using Developer API          ← API configurada
-[playstore] using HTML scraper (set PLAY_STORE_CREDENTIALS_JSON for full coverage)  ← fallback
 ```
 
 ---
@@ -335,61 +283,16 @@ GET https://itunes.apple.com/{region}/rss/customerreviews/page={n}/id={appID}/so
 
 ### Google Play Store
 
-O gogather suporta dois backends para o Play Store, selecionados automaticamente:
-
-**Modo API (quando `PLAY_STORE_CREDENTIALS_JSON` está configurado)**
-
-Usa a **Google Play Developer API v3** com autenticação OAuth2 via service account (JWT bearer). Implementado sem dependências externas — utiliza apenas a stdlib do Go (`crypto/rsa`, `crypto/x509`, `encoding/pem`).
+As reviews são obtidas via **endpoint interno `batchexecute`** do Play Store — o mesmo que o site usa internamente. Não requer autenticação nem API key.
 
 ```
-GET https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/reviews
-Authorization: Bearer <token>
+POST https://play.google.com/_/PlayStoreUi/data/batchexecute?hl={lang}&gl={country}
+RPC: oCPfdb  |  sort=2 (mais recentes primeiro)
 ```
 
-- Retorna até **100 reviews** por requisição
-- Ordenadas por `lastModified` decrescente (mais recentes primeiro)
-- Cobertura total do histórico — sem filtro de relevância
-- Token OAuth2 cacheado na memória e renovado automaticamente antes do vencimento
-
-**Modo HTML scraper (fallback sem credenciais)**
-
-O nome do app é extraído da meta tag `og:title`. As reviews são extraídas do payload JavaScript embutido na página:
-
-```javascript
-AF_initDataCallback({key: 'ds:11', hash: '...', data: [[review, ...], token]})
-```
-
-- Retorna até **20 reviews** por requisição
-- Ordenadas por **relevância** (não por data) — pode incluir reviews antigas
+- Retorna até **100 reviews** por requisição, ordenadas da mais recente para a mais antiga
 - Sem autenticação ou API key
-- O filtro `MAX_REVIEW_AGE_DAYS` mitiga reviews muito antigas
-
-### Reviews recentes no Play Store — limitações e filtro
-
-O endpoint `ds:11` retorna as reviews que o algoritmo do Google considera **mais relevantes** — não necessariamente as mais recentes. A relevância combina fatores como número de curtidas, data, nota e presença de resposta do desenvolvedor. Isso significa que reviews com muito engajamento de 2020–2022 podem aparecer junto com reviews novas.
-
-**Por que não buscar por "mais recentes" diretamente?**
-
-O Google expõe um endpoint interno (`/_/PlayStoreUi/data/batchexecute`) que aceita `sort=2` (mais recentes), mas ele exige um token de sessão (`SNlM0e`) gerado dinamicamente pelo JavaScript da página — inacessível via HTTP simples sem um browser headless (Playwright/Puppeteer). Todos os outros endpoints públicos testados foram descontinuados (405) ou bloqueados.
-
-**Solução atual — filtro por idade (`MAX_REVIEW_AGE_DAYS`)**
-
-O `gogather` descarta qualquer review cuja data seja anterior a `N` dias atrás, independente da loja. Com o padrão de 90 dias:
-
-- Reviews de anos anteriores que o Google julga "relevantes" são silenciosamente ignoradas
-- Reviews genuinamente recentes (dentro da janela) passam normalmente
-- Se uma review nova demorar para aparecer no `ds:11` (por baixo engajamento inicial), ela pode ser captada assim que o Google a promover — ainda dentro da janela de 90 dias na maioria dos casos
-
-**Trade-offs por janela:**
-
-| `MAX_REVIEW_AGE_DAYS` | Comportamento |
-|---|---|
-| `0` | Sem filtro — todas as reviews "relevantes" passam, incluindo antigas |
-| `30` | Janela apertada — captura reviews do último mês; reviews novas com baixo engajamento podem ser perdidas |
-| `90` *(padrão)* | Equilíbrio recomendado — cobre variações de ciclo de release e picos de relevância |
-| `365` | Janela ampla — garante cobertura total de reviews anuais; aceita algumas reviews antigas nos primeiros polls |
-
-**Alternativa para cobertura total:** usar a [Google Play Developer API](https://developers.google.com/android-publisher/api-ref/rest/v3/reviews/list) com OAuth2 — retorna todas as reviews em ordem cronológica, sem limitação de algoritmo. Requer que o app seja seu (acesso de dono na Play Console).
+- O nome do app é extraído da meta tag `og:title` da página do Play Store
 
 ### Deduplicação
 

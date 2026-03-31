@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -101,24 +100,9 @@ func poll(cfg *config.Config, seen *store.SeenStore, slack *notifier.SlackNotifi
 	log.Printf("poll done — %d new reviews sent to Slack", newCount)
 }
 
-// fetchPlayStoreReviews selects the best available backend:
-//   - Google Play Developer API when PLAY_STORE_CREDENTIALS_JSON is set (exact, sorted by date)
-//   - HTML scraper fallback (20 "most relevant" reviews, filtered by age in the caller)
+// fetchPlayStoreReviews fetches reviews using the Play Store internal batchexecute RPC.
+// No API key required — reviews are sorted newest-first.
 func fetchPlayStoreReviews(cfg *config.Config) ([]scraper.Review, error) {
-	if cfg.PlayStoreCredentialsJSON != "" {
-		s, err := scraper.NewPlayStoreAPIScraper(
-			cfg.PlayStorePackageName,
-			cfg.PlayStoreLang,
-			cfg.PlayStoreCountry,
-			cfg.PlayStoreCredentialsJSON,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("init API scraper: %w", err)
-		}
-		log.Print("[playstore] using Developer API")
-		return s.FetchReviews()
-	}
-	log.Print("[playstore] using HTML scraper (set PLAY_STORE_CREDENTIALS_JSON for full coverage)")
 	s := scraper.NewPlayStoreScraper(cfg.PlayStorePackageName, cfg.PlayStoreLang, cfg.PlayStoreCountry)
 	return s.FetchReviews()
 }

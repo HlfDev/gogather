@@ -1,12 +1,15 @@
 package scraper
 
-// parsePlayStoreHTML extracts reviews from the Play Store app page HTML.
+// parseBatchExecuteResponse decodes a Play Store batchexecute RPC response.
 //
-// The Play Store embeds review data in an AF_initDataCallback call with key 'ds:11'.
-// The data array structure is:
+// The response body starts with )]}'\n\n followed by a JSON array. After
+// stripping that prefix, the outer structure is:
 //
-//	data[0] = []review      (up to 20 most-relevant reviews)
-//	data[1] = pagination info
+//	outer[0] = ["wrb.fr", "oCPfdb", "<inner_json_string>", ...]
+//
+// The inner JSON string (outer[0][2]) contains:
+//
+//	inner[0] = []review  (array of review arrays)
 //
 // Each review array has the following positions:
 //
@@ -21,32 +24,59 @@ package scraper
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
-func parsePlayStoreHTML(html, packageName, appName string) ([]Review, error) {
-	m := reDs11.FindStringSubmatch(html)
-	if len(m) < 2 {
-		return nil, fmt.Errorf("ds:11 payload not found — app may not exist or Play Store changed its format")
+func parseBatchExecuteResponse(raw []byte, packageName, appName string) ([]Review, error) {
+	// Strip the )]}'\n\n prefix emitted by the batchexecute endpoint.
+	body := string(raw)
+	idx := strings.Index(body, "\n\n")
+	if idx < 0 {
+		return nil, fmt.Errorf("batchexecute response: missing \\n\\n separator")
 	}
+	body = body[idx+2:]
 
-	var data []interface{}
-	if err := json.Unmarshal([]byte(m[1]), &data); err != nil {
-		return nil, fmt.Errorf("ds:11 parse: %w", err)
+	// Parse the outer JSON array.
+	var outer []json.RawMessage
+	if err := json.Unmarshal([]byte(body), &outer); err != nil {
+		return nil, fmt.Errorf("outer parse: %w", err)
 	}
-
-	if len(data) == 0 {
+	if len(outer) == 0 {
 		return nil, nil
 	}
 
-	reviewsSlice, ok := data[0].([]interface{})
+	// outer[0] = ["wrb.fr", "oCPfdb", "<inner_json_string>", ...]
+	var firstEntry []json.RawMessage
+	if err := json.Unmarshal(outer[0], &firstEntry); err != nil {
+		return nil, fmt.Errorf("first entry parse: %w", err)
+	}
+	if len(firstEntry) < 3 {
+		return nil, fmt.Errorf("unexpected first entry length %d", len(firstEntry))
+	}
+
+	// firstEntry[2] is a JSON-encoded string — parse it to get the real payload.
+	var innerStr string
+	if err := json.Unmarshal(firstEntry[2], &innerStr); err != nil {
+		return nil, fmt.Errorf("inner string parse: %w", err)
+	}
+
+	var inner []interface{}
+	if err := json.Unmarshal([]byte(innerStr), &inner); err != nil {
+		return nil, fmt.Errorf("inner parse: %w", err)
+	}
+	if len(inner) == 0 {
+		return nil, nil
+	}
+
+	reviewsSlice, ok := inner[0].([]interface{})
 	if !ok {
 		return nil, nil
 	}
 
 	var reviews []Review
-	for _, raw := range reviewsSlice {
-		r, err := parsePlayStoreReview(raw, packageName, appName)
+	for _, rv := range reviewsSlice {
+		r, err := parsePlayStoreReview(rv, packageName, appName)
 		if err != nil {
 			continue
 		}
@@ -67,7 +97,6 @@ func parsePlayStoreReview(raw interface{}, packageName, appName string) (Review,
 		return Review{}, fmt.Errorf("missing review ID")
 	}
 
-	// Author name: rv[1][0]
 	authorName := ""
 	if a1, ok := rv[1].([]interface{}); ok && len(a1) > 0 {
 		authorName, _ = a1[0].(string)
@@ -97,7 +126,6 @@ func parsePlayStoreReview(raw interface{}, packageName, appName string) (Review,
 		}
 	}
 
-	// Version: rv[10] (direct string, not nested)
 	version := ""
 	if len(rv) > 10 && rv[10] != nil {
 		version, _ = rv[10].(string)
