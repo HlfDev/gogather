@@ -23,7 +23,7 @@ Monitora reviews da **Apple App Store** e **Google Play Store** e envia notifica
 
 ```
  Apple App Store          Google Play Store
- (RSS + Lookup API)       (HTML scraping)
+ (RSS + Lookup API)       (batchexecute RPC)
         │                        │
         └───────────┬────────────┘
                     │
