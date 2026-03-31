@@ -52,7 +52,7 @@ A cada poll o serviço busca as reviews de cada loja ativa, descarta as mais ant
 Cada review chega como uma mensagem individual com barra colorida indicando a nota:
 
 ```
-│ 🟢  *Dafiti: Shopping no seu Bolso*   ★★★★★
+│ 🟢  *Meu App*   ★★★★★
 │     :applestore: App Store
 │
 │     > Amo o app! Produtos de qualidade e preços acessíveis.
@@ -90,12 +90,12 @@ MAX_REVIEW_AGE_DAYS=90       # ignora reviews mais antigas que N dias
 
 # ── Apple App Store ────────────────────────────────────────────
 APPLE_ENABLED=true
-APPLE_APP_ID=564924168       # ID numérico da URL do app
+APPLE_APP_ID=123456789       # ID numérico da URL do app
 APPLE_REGION=br              # br · us · pt · es …
 
 # ── Google Play Store ──────────────────────────────────────────
 PLAY_STORE_ENABLED=true
-PLAY_STORE_PACKAGE=br.com.dafiti   # package name do app
+PLAY_STORE_PACKAGE=com.example.app   # package name do app
 PLAY_STORE_LANG=pt                 # pt · en · es …
 PLAY_STORE_COUNTRY=br              # br · us …
 ```
@@ -119,7 +119,7 @@ Os valores aceitos para as flags são: `true` / `false` · `1` / `0` · `yes` / 
 ### Onde encontrar o App ID da Apple
 
 ```
-https://apps.apple.com/br/app/nome-do-app/id564924168
+https://apps.apple.com/br/app/nome-do-app/id123456789
                                                ^^^^^^^^^ ← APPLE_APP_ID
 ```
 
